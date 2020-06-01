@@ -1,2 +1,3 @@
 src/compile_commands.json
 src/my_proc
+*.swp

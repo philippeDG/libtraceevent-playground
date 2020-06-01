@@ -3,11 +3,13 @@ CC=gcc
 LIBPATH = /home/phil/repo/linux/tools/lib/traceevent
 LIB = traceevent
 
-FLAGS = -ldl -Wl
+FLAGS = -ldl
 
 EXEC = my_proc
 
-all: my_proc.c
-	gcc -o $(EXEC) my_proc.c -I$(LIBPATH) -L$(LIBPATH) -l$(LIB) $(FLAGS),-rpath=$(LIBPATH)
+LINKERARGS = -Wl,-rpath=$(LIBPATH)
+
+$(EXEC): my_proc.c
+	gcc -o $(EXEC) my_proc.c -I$(LIBPATH) -L$(LIBPATH) -l$(LIB) $(FLAGS) $(LINKERARGS)
 clean:
-	rm -f *.out $(EXEC)
+	rm -f $(EXEC)
