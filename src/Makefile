@@ -10,6 +10,6 @@ EXEC = my_proc
 LINKERARGS = -Wl,-rpath=$(LIBPATH)
 
 $(EXEC): my_proc.c
-	gcc -o $(EXEC) my_proc.c -I$(LIBPATH) -L$(LIBPATH) -l$(LIB) $(FLAGS) $(LINKERARGS)
+	gcc -o $@ $^ -I$(LIBPATH) -L$(LIBPATH) -l$(LIB) $(FLAGS) $(LINKERARGS)
 clean:
 	rm -f $(EXEC)
