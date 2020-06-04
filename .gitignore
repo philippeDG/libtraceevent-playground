@@ -1,3 +1,6 @@
 src/compile_commands.json
-src/my_proc
+src/traceevent_playground
 *.swp
+*.o
+.clangd
+.vscode
