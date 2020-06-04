@@ -3,10 +3,11 @@
 #include <string.h>
 #include <stdlib.h>
 #include <glib.h>
-//#include "traceevent/event-parse.h"
+#include "traceevent/event-parse.h"
 
 #define TRACE_FILE_PATH "../../trace.dat"
 #define MAGIC_NUMBER 0x17, 0x08, 0x44
+
 
 struct Initial_format {
 	//file data
@@ -30,49 +31,66 @@ struct Header_event_info {
 	char *eventFormat;
 }; // 21 + eventHeaderInfoSize
 
+struct Header {
+	struct Initial_format initial_format;
+	struct Header_info_format header_info_format;
+	struct Header_event_info header_event_info;
+};
 
-int header_parser() {
+int headerParser(struct Header *header) {
 
 	FILE *fp;
 
 	fp = fopen("../../trace.dat", "r");
 
-	struct Initial_format initial_format;
-	struct Header_info_format header_info_format;
-	struct Header_event_info header_event_info;	
+	fread(&header->initial_format.magicNumber, 1, sizeof(header->initial_format.magicNumber), fp);
+	fread(&header->initial_format.identificationString, 1, sizeof(header->initial_format.identificationString), fp);
 
-	fread(&initial_format.magicNumber, 1, sizeof(initial_format.magicNumber), fp);
-	fread(&initial_format.identificationString, 1, sizeof(initial_format.identificationString), fp);
+	fread(&header->initial_format.version, 1, sizeof(header->initial_format.version), fp); // TODO: may change
+	fread(&header->initial_format.endianess, 1, sizeof(header->initial_format.endianess), fp);
+	fread(&header->initial_format.usrLongSize, 1, sizeof(header->initial_format.usrLongSize), fp);
+	fread(&header->initial_format.pageSize, 1, sizeof(header->initial_format.pageSize), fp);
 
-	fread(&initial_format.version, 1, sizeof(initial_format.version), fp); // TODO: may change
-	fread(&initial_format.endianess, 1, sizeof(initial_format.endianess), fp);
-	fread(&initial_format.usrLongSize, 1, sizeof(initial_format.usrLongSize), fp);
-	fread(&initial_format.pageSize, 1, sizeof(initial_format.pageSize), fp);
-
-	if(initial_format.endianess) { //big endian
-		initial_format.pageSize = GINT32_FROM_BE(initial_format.pageSize);
+	if(header->initial_format.endianess) { //big endian
+		header->initial_format.pageSize = GINT32_FROM_BE(header->initial_format.pageSize);
 	} else {
-		initial_format.pageSize = GINT32_FROM_LE(initial_format.pageSize);
+		header->initial_format.pageSize = GINT32_FROM_LE(header->initial_format.pageSize);
 	}
 
-	fread(&header_info_format.identificationString, 1, sizeof(header_info_format.identificationString), fp);	
-	fread(&header_info_format.headerSize, 1, sizeof(header_info_format.headerSize), fp);
+	fread(&header->header_info_format.identificationString, 1, sizeof(header->header_info_format.identificationString), fp);	
+	fread(&header->header_info_format.headerSize, 1, sizeof(header->header_info_format.headerSize), fp);
 
-	header_info_format.ftraceFormat = (char*) g_malloc(header_info_format.headerSize);
-	fread(header_info_format.ftraceFormat, 1, header_info_format.headerSize, fp);
+	header->header_info_format.ftraceFormat = (char*) g_malloc(header->header_info_format.headerSize);
+	fread(header->header_info_format.ftraceFormat, 1, header->header_info_format.headerSize, fp);
 
-	fread(&header_event_info.identificationString, 1, sizeof(header_event_info.identificationString), fp);
-	fread(&header_event_info.eventHeaderInfoSize, 1, sizeof(header_event_info.eventHeaderInfoSize), fp);
-	header_event_info.eventFormat = (char*) g_malloc(header_event_info.eventHeaderInfoSize);
-	fread(header_event_info.eventFormat, 1, header_event_info.eventHeaderInfoSize, fp);
+	fread(&header->header_event_info.identificationString, 1, sizeof(header->header_event_info.identificationString), fp);
+	fread(&header->header_event_info.eventHeaderInfoSize, 1, sizeof(header->header_event_info.eventHeaderInfoSize), fp);
+	header->header_event_info.eventFormat = (char*) g_malloc(header->header_event_info.eventHeaderInfoSize);
+	fread(header->header_event_info.eventFormat, 1, header->header_event_info.eventHeaderInfoSize, fp);
 	
 	fclose(fp);
 	return 0;
 }
 
+bool validateMagicNumber(char header_magic_number[3]) {
+	char magic_num[3] = {MAGIC_NUMBER};
+	return (header_magic_number[0] == magic_num[0]) & (header_magic_number[1] == magic_num[1]) & (header_magic_number[2] == magic_num[2]) ;
+}
+
+int headerCheck(struct Header *header){
+	if(!validateMagicNumber(header->initial_format.magicNumber)) {
+		return false;//not an ftrace tace
+	}
+
+	return true;
+}
+
 
 int main(){
-	header_parser();
-
+	struct Header header;
+	headerParser(&header);
+	if (headerCheck(&header)) {
+		return -1; // TODO: assert
+	}
 	return 0;
 }
