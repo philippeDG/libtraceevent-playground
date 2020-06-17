@@ -5,6 +5,8 @@
 #include <glib.h>
 #include "glibconfig.h"
 #include "traceevent/event-parse.h"
+#include <trace-seq.h>
+
 #include <sanitizer/asan_interface.h>
 
 #define TRACE_FILE_PATH "~/trace.dat"
@@ -58,7 +60,14 @@ struct Event_systems {
 	struct Event_system *systems;
 };
 
-int headerParser(FILE  *fp, struct Header *header) {
+struct Trace_cpu_offset {
+	guint64 cpu_offset;
+	guint64 cpu_offset_size; 
+};
+
+//Parser
+
+int headerParser(FILE  *fp, struct tep_handle *tep, struct Header *header) {
 
 	fread(&header->initial_format.magicNumber, 1, sizeof(header->initial_format.magicNumber), fp);
 	fread(&header->initial_format.identificationString, 1, sizeof(header->initial_format.identificationString), fp);
@@ -68,9 +77,13 @@ int headerParser(FILE  *fp, struct Header *header) {
 	fread(&header->initial_format.usrLongSize, 1, sizeof(header->initial_format.usrLongSize), fp);
 	fread(&header->initial_format.pageSize, 1, sizeof(header->initial_format.pageSize), fp);
 
+	tep_set_page_size(tep, header->initial_format.pageSize);
+
 	if(header->initial_format.endianess) { //big endian
+		tep_set_local_bigendian(tep,TEP_BIG_ENDIAN);
 		header->initial_format.pageSize = GINT32_FROM_BE(header->initial_format.pageSize);
 	} else {
+		tep_set_local_bigendian(tep, TEP_LITTLE_ENDIAN);
 		header->initial_format.pageSize = GINT32_FROM_LE(header->initial_format.pageSize);
 	}
 
@@ -138,7 +151,6 @@ int kallsysParser(FILE *fp) {
 	guint32 size;
 	fread(&size, 1, sizeof(size), fp);
 	fseek(fp,size, SEEK_CUR);
-	int i = ftell(fp);
 	return 0;
 }
 
@@ -146,7 +158,6 @@ int printkParser(FILE *fp) {
 	guint32 size;
 	fread(&size, 1, sizeof(size), fp);
 	fseek(fp,size, SEEK_CUR);
-	int i = ftell(fp);
 	return 0;
 }
 
@@ -154,10 +165,54 @@ int processInfoParser(FILE *fp) {
 	guint64 size;
 	fread(&size, 1, sizeof(size), fp);
 	fseek(fp,size, SEEK_CUR);
-	int i = ftell(fp);
 	return 0;
 }
 
+int restOfFileParser(FILE *fp, struct tep_handle *tep, struct Trace_cpu_offset **cpu_offsets) {
+	guint32 cpu_count;
+	fread(&cpu_count, 1, sizeof(cpu_count), fp);
+
+	tep_set_cpus(tep, cpu_count);
+
+	char *label = (char*)g_malloc(10);
+
+	fread(label, 1, 10, fp);
+
+	if(strcmp(label, "options  ")==0) {
+		printf("option!\n");
+		guint16 option_id;
+		for(fread(&option_id, 1, sizeof(option_id), fp); option_id != 0; fread(&option_id, 1, sizeof(option_id), fp)) { //sketch??
+			guint32 option_size;
+			fread(&option_size, 1, sizeof(option_size), fp);
+			fseek(fp,option_size, SEEK_CUR); //Currently there are no options defined, but this is here to extend the data.
+		}
+	} 
+	
+	char *next_option = (char*)g_malloc(10);
+
+	fread(next_option, 1, 10, fp);
+	if(strcmp(next_option, "latency  ")==0) {
+		/*the rest of the file is
+           simply ASCII text that was taken from the target's:
+           debugfs/tracing/trace*/
+	} 
+
+	*cpu_offsets = g_malloc_n(cpu_count, sizeof(struct Trace_cpu_offset));
+	if (strcmp(next_option, "flyrecord")==0) {
+		printf("flyrecord\n");
+		
+		for(int i = 0; i<cpu_count; i++) {
+			fread(&cpu_offsets[0][i].cpu_offset, 1, sizeof(cpu_offsets[0][i].cpu_offset), fp);
+			fread(&cpu_offsets[0][i].cpu_offset_size, 1, sizeof(cpu_offsets[0][i].cpu_offset_size), fp);
+		}
+	}
+
+	free(label);
+	free(next_option);
+	return 0;
+}
+
+// Validation
 
 bool validateMagicNumber(char header_magic_number[3]) {
 	char magic_num[3] = {MAGIC_NUMBER};
@@ -172,18 +227,29 @@ int headerCheck(struct Header *header){
 	return false;
 }
 
+//free
+
 void freeHeader(struct Header *header){
 	free(header->header_info_format.page_header_format);
 	free(header->header_event_info.event_header_format);
 }
 
 
-void freeEvents(struct Event_system *event_formats) {
-	for(int i = 0; i < event_formats->event_format_count; i++) {
-		free(event_formats->event_formats[i].format);
+void freeEventSystem(struct Event_system *event_system) {
+	for(int i = 0; i < event_system->event_format_count; i++) {
+		free(event_system->event_formats[i].format);
 	}
-	free(event_formats->event_formats);
+	free(event_system->event_formats);
 }
+
+void freeEventSystems(struct Event_systems *event_systems) {
+	for (int i = 0; i < event_systems->sys_count; i++) {
+		freeEventSystem(&event_systems->systems[i]);
+	}
+	free(event_systems->systems);
+}
+
+//Print
 
 void printFields(struct tep_format_field *format) {
 	for (struct tep_format_field *field = format; field != NULL; field = field->next) {
@@ -230,10 +296,11 @@ int main(int argc, char **argv){
 	struct Header header;
 	struct Event_system ftrace_event_formats;
 	struct Event_systems event_systems;
+	struct Trace_cpu_offset *cpu_offsets;
 	//CHECK ARGS
 	FILE *fp = fopen(argv[1], "r");
 
-	headerParser(fp, &header);
+	headerParser(fp, tep, &header);
 	if (headerCheck(&header)) {
 		return -1; // TODO: assert
 	}
@@ -254,39 +321,26 @@ int main(int argc, char **argv){
 
 	processInfoParser(fp);
 
-	guint32 cpu_count;
-	fread(&cpu_count, 1, sizeof(cpu_count), fp);
+	restOfFileParser(fp, tep, &cpu_offsets);
 
-	char *label = (char*)g_malloc(10);
+	int r = tep_get_cpus(tep);
+	long pos = ftell(fp);
 
-	fread(label, 1, 10, fp);
+	fseek(fp, (long)cpu_offsets[3].cpu_offset-pos+cpu_offsets[3].cpu_offset_size, SEEK_CUR);
 
-	if(strcmp(label, "options  ")==0) {
-		printf("option!\n");
-		guint16 option_id;
-		fread(&option_id, 1, sizeof(option_id), fp);
+	struct trace_seq seq;
+	trace_seq_init(&seq);
+	trace_seq_terminate(&seq);
+	trace_seq_destroy(&seq);
+	//free all
 
-		guint32 option_size;
-		if(option_id != 0){
-			fread(&option_size, 1, sizeof(option_size), fp);
-			fseek(fp,option_size, SEEK_CUR);
-			int i = ftell(fp);
-			int j = 9;
-		}
-	} 
 
-	if(strcmp(label, "latency  ")) {
-		printf("latency\n");
-	} 
-	if (strcmp(label, "flyrecord")) {
-		printf("flyrecord\n");
-	}
-
-	free(label);
 	fclose(fp);
 
-	freeEvents(&ftrace_event_formats);
+	freeEventSystem(&ftrace_event_formats);
+	freeEventSystems(&event_systems);
 	freeHeader(&header);
+	free(cpu_offsets);
 
 	tep_free(tep);
 
