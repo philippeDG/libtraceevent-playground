@@ -5,7 +5,7 @@
 #include <glib.h>
 #include "glibconfig.h"
 #include "traceevent/event-parse.h"
-#include <trace-seq.h>
+#include "traceevent/kbuffer.h"
 
 #include <sanitizer/asan_interface.h>
 
@@ -181,10 +181,12 @@ int restOfFileParser(FILE *fp, struct tep_handle *tep, struct Trace_cpu_offset *
 	if(strcmp(label, "options  ")==0) {
 		printf("option!\n");
 		guint16 option_id;
-		for(fread(&option_id, 1, sizeof(option_id), fp); option_id != 0; fread(&option_id, 1, sizeof(option_id), fp)) { //sketch??
+		fread(&option_id, 1, sizeof(option_id), fp);
+		while(option_id != 0) {
 			guint32 option_size;
 			fread(&option_size, 1, sizeof(option_size), fp);
 			fseek(fp,option_size, SEEK_CUR); //Currently there are no options defined, but this is here to extend the data.
+			fread(&option_id, 1, sizeof(option_id), fp);
 		}
 	} 
 	

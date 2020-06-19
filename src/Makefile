@@ -1,6 +1,6 @@
 CC=gcc
 
-LIBPATH = /home/phil/repo/linux/tools/lib/traceevent
+LIBPATH = /home/pduplessis/repo/linux/tools/lib/traceevent
 LIB = traceevent
 
 LDFLAGS = -L$(LIBPATH) -l$(LIB) -ldl -Wl,-rpath=$(LIBPATH) -lglib-2.0 -fsanitize=address
