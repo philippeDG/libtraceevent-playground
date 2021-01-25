@@ -9,9 +9,7 @@
 
 #include <sanitizer/asan_interface.h>
 
-#define TRACE_FILE_PATH "~/trace.dat"
 #define MAGIC_NUMBER 0x17, 0x08, 0x44
-
 
 void __asan_on_error() {}
 
@@ -62,12 +60,13 @@ struct Event_systems {
 
 struct Trace_cpu_offset {
 	guint64 cpu_offset;
-	guint64 cpu_offset_size; 
+	guint64 cpu_offset_size;
 };
 
 //Parser
 
-int headerParser(FILE  *fp, struct tep_handle *tep, struct Header *header) {
+int headerParser(FILE  *fp, struct tep_handle *tep, struct Header *header)
+{
 
 	fread(&header->initial_format.magicNumber, 1, sizeof(header->initial_format.magicNumber), fp);
 	fread(&header->initial_format.identificationString, 1, sizeof(header->initial_format.identificationString), fp);
@@ -78,6 +77,8 @@ int headerParser(FILE  *fp, struct tep_handle *tep, struct Header *header) {
 	fread(&header->initial_format.pageSize, 1, sizeof(header->initial_format.pageSize), fp);
 
 	tep_set_page_size(tep, header->initial_format.pageSize);
+	tep_set_long_size(tep, header->initial_format.usrLongSize);
+	tep_set_file_bigendian(tep, (enum tep_endian)header->initial_format.endianess);
 
 	if(header->initial_format.endianess) { //big endian
 		tep_set_local_bigendian(tep,TEP_BIG_ENDIAN);
@@ -87,7 +88,7 @@ int headerParser(FILE  *fp, struct tep_handle *tep, struct Header *header) {
 		header->initial_format.pageSize = GINT32_FROM_LE(header->initial_format.pageSize);
 	}
 
-	fread(&header->header_info_format.identificationString, 1, sizeof(header->header_info_format.identificationString), fp);	
+	fread(&header->header_info_format.identificationString, 1, sizeof(header->header_info_format.identificationString), fp);
 	fread(&header->header_info_format.headerSize, 1, sizeof(header->header_info_format.headerSize), fp);
 
 	header->header_info_format.page_header_format = (char*) g_malloc(header->header_info_format.headerSize);
@@ -97,13 +98,14 @@ int headerParser(FILE  *fp, struct tep_handle *tep, struct Header *header) {
 	fread(&header->header_event_info.eventHeaderInfoSize, 1, sizeof(header->header_event_info.eventHeaderInfoSize), fp);
 	header->header_event_info.event_header_format = (char*) g_malloc(header->header_event_info.eventHeaderInfoSize);
 	fread(header->header_event_info.event_header_format, 1, header->header_event_info.eventHeaderInfoSize, fp);
-	
+
 	return 0;
 }
 
-int eventParser(FILE *fp, struct tep_handle *tep, struct Event_system *event_system){
+int eventParser(FILE *fp, struct tep_handle *tep, struct Event_system *event_system)
+{
 	fread(&event_system->event_format_count, 1, sizeof(event_system->event_format_count), fp);
-	
+
 	event_system->event_formats = (struct Event_format*) g_malloc(event_system->event_format_count * sizeof(struct Event_format));
 
 	for(int i=0; i < event_system->event_format_count; i++){
@@ -115,16 +117,18 @@ int eventParser(FILE *fp, struct tep_handle *tep, struct Event_system *event_sys
 		enum tep_errno err = tep_parse_format(tep, &event_system->event_formats[i].tep_event, cur_event->format, cur_event->format_size, event_system->sys_name);
 		if(err !=0) {
 			printf("failed to parse\n");
+
 			return 1;
 		}
 	}
 
-	
+
 
 	return 0;
 }
 
-gchar* readNullTerminated(FILE *fp) {
+gchar* readNullTerminated(FILE *fp)
+{
 	gchar cur_char;
 	GString *str = g_string_new(NULL);
 
@@ -135,40 +139,48 @@ gchar* readNullTerminated(FILE *fp) {
 	return g_string_free(str, FALSE);
 }
 
-int systemParser(FILE *fp, struct tep_handle *tep, struct Event_systems *event_systems) {
-	int err = fread(&event_systems->sys_count, sizeof(event_systems->sys_count), 1, fp);
+int systemParser(FILE *fp, struct tep_handle *tep, struct Event_systems *event_systems)
+{
+	fread(&event_systems->sys_count, sizeof(event_systems->sys_count), 1, fp);
 	event_systems->systems = g_new(struct Event_system, event_systems->sys_count);
 
 	for(int i = 0; i < event_systems->sys_count; i++) {
-		event_systems->systems[i].sys_name = readNullTerminated(fp); //TODO: check error
+		event_systems->systems[i].sys_name = readNullTerminated(fp);
 		eventParser(fp, tep, &event_systems->systems[i]);
 	}
 
 	return 0;
 }
 
-int kallsysParser(FILE *fp) {
+int kallsysParser(FILE *fp)
+{
 	guint32 size;
 	fread(&size, 1, sizeof(size), fp);
 	fseek(fp,size, SEEK_CUR);
+
 	return 0;
 }
 
-int printkParser(FILE *fp) {
+int printkParser(FILE *fp)
+{
 	guint32 size;
 	fread(&size, 1, sizeof(size), fp);
 	fseek(fp,size, SEEK_CUR);
+
 	return 0;
 }
 
-int processInfoParser(FILE *fp) {
+int processInfoParser(FILE *fp)
+{
 	guint64 size;
 	fread(&size, 1, sizeof(size), fp);
 	fseek(fp,size, SEEK_CUR);
+
 	return 0;
 }
 
-int restOfFileParser(FILE *fp, struct tep_handle *tep, struct Trace_cpu_offset **cpu_offsets) {
+int restOfFileParser(FILE *fp, struct tep_handle *tep, struct Trace_cpu_offset **cpu_offsets)
+{
 	guint32 cpu_count;
 	fread(&cpu_count, 1, sizeof(cpu_count), fp);
 
@@ -188,8 +200,8 @@ int restOfFileParser(FILE *fp, struct tep_handle *tep, struct Trace_cpu_offset *
 			fseek(fp,option_size, SEEK_CUR); //Currently there are no options defined, but this is here to extend the data.
 			fread(&option_id, 1, sizeof(option_id), fp);
 		}
-	} 
-	
+	}
+
 	char *next_option = (char*)g_malloc(10);
 
 	fread(next_option, 1, 10, fp);
@@ -197,12 +209,12 @@ int restOfFileParser(FILE *fp, struct tep_handle *tep, struct Trace_cpu_offset *
 		/*the rest of the file is
            simply ASCII text that was taken from the target's:
            debugfs/tracing/trace*/
-	} 
+	}
 
 	*cpu_offsets = g_malloc_n(cpu_count, sizeof(struct Trace_cpu_offset));
 	if (strcmp(next_option, "flyrecord")==0) {
 		printf("flyrecord\n");
-		
+
 		for(int i = 0; i<cpu_count; i++) {
 			fread(&cpu_offsets[0][i].cpu_offset, 1, sizeof(cpu_offsets[0][i].cpu_offset), fp);
 			fread(&cpu_offsets[0][i].cpu_offset_size, 1, sizeof(cpu_offsets[0][i].cpu_offset_size), fp);
@@ -211,49 +223,118 @@ int restOfFileParser(FILE *fp, struct tep_handle *tep, struct Trace_cpu_offset *
 
 	free(label);
 	free(next_option);
+
+	return 0;
+}
+
+guint16 read2ByteField(void* addr)
+{
+	guint16 *value = addr;
+	if(tep_is_bigendian()) {
+		return GINT16_FROM_BE(*value);
+	} else {
+		return GUINT16_FROM_LE(*value);
+	}
+}
+
+int parse_cpu_event(FILE* fp, struct tep_handle *tep, const struct Trace_cpu_offset *cpu_offset, GMappedFile *map)
+{
+	enum kbuffer_long_size long_size;
+	if (tep_get_long_size(tep) == 4) {
+		long_size = KBUFFER_LSIZE_4;
+	} else {
+		long_size = KBUFFER_LSIZE_8;
+	}
+
+	enum kbuffer_endian endian;
+	if(tep_is_bigendian()){
+		endian = KBUFFER_ENDIAN_BIG;
+	} else {
+		endian = KBUFFER_ENDIAN_LITTLE;
+	}
+
+	struct kbuffer *kbuf = kbuffer_alloc(long_size, endian);
+
+	void* start_buf = g_mapped_file_get_contents(map);
+	void* start_cpu = start_buf + cpu_offset->cpu_offset;
+
+	printf("%p\n",start_buf);
+	printf("%p\n", start_cpu);
+	void* buf = start_cpu;
+	void* cpu_end = start_cpu + cpu_offset->cpu_offset_size;
+	int page_count = 0;
+
+	kbuffer_load_subbuffer(kbuf, buf);
+	unsigned long long ts;
+	int nb = 0;
+	while (true) {
+
+		void* data = kbuffer_read_event(kbuf, &ts);
+		guint16 id = read2ByteField(data);
+		printf("id %d\n", id);
+
+		struct tep_event *event = tep_find_event(tep, id);
+		printf("%s\n", event->name);
+		printf("%lld\n", kbuffer_timestamp(kbuf));
+		nb++;
+		buf = kbuffer_next_event(kbuf, NULL);
+
+		if (buf == NULL) {
+			page_count++;
+			buf = start_cpu + (page_count * 4096);
+			if(buf >= cpu_end) {
+				break;
+			}
+			kbuffer_load_subbuffer(kbuf, buf);
+		}
+	}
+
+	kbuffer_free(kbuf);
+
 	return 0;
 }
 
 // Validation
 
-bool validateMagicNumber(char header_magic_number[3]) {
+bool validateMagicNumber(char header_magic_number[3])
+{
 	char magic_num[3] = {MAGIC_NUMBER};
 	return (header_magic_number[0] == magic_num[0]) & (header_magic_number[1] == magic_num[1]) & (header_magic_number[2] == magic_num[2]) ;
 }
 
-int headerCheck(struct Header *header){
-	if(!validateMagicNumber(header->initial_format.magicNumber)) {
-		return true;//not an ftrace tace
-	}
-
-	return false;
+int headerCheck(struct Header *header)
+{
+	return !validateMagicNumber(header->initial_format.magicNumber);
 }
 
 //free
-
-void freeHeader(struct Header *header){
+void freeHeader(struct Header *header)
+{
 	free(header->header_info_format.page_header_format);
 	free(header->header_event_info.event_header_format);
 }
 
 
-void freeEventSystem(struct Event_system *event_system) {
+void freeEventSystem(struct Event_system *event_system)
+{
 	for(int i = 0; i < event_system->event_format_count; i++) {
 		free(event_system->event_formats[i].format);
 	}
 	free(event_system->event_formats);
 }
 
-void freeEventSystems(struct Event_systems *event_systems) {
+void freeEventSystems(struct Event_systems *event_systems)
+{
 	for (int i = 0; i < event_systems->sys_count; i++) {
 		freeEventSystem(&event_systems->systems[i]);
+		g_free(event_systems->systems[i].sys_name);
 	}
 	free(event_systems->systems);
 }
 
 //Print
-
-void printFields(struct tep_format_field *format) {
+void printFields(struct tep_format_field *format)
+{
 	for (struct tep_format_field *field = format; field != NULL; field = field->next) {
 		printf("      %s\n", field->name);
 		printf("        type: %s\n", field->type);
@@ -266,34 +347,38 @@ void printFields(struct tep_format_field *format) {
 	}
 }
 
-void printEvent(const struct Event_format *event_format) {
+void printEvent(const struct Event_format *event_format)
+{
 	struct tep_event *event = event_format->tep_event;
 	printf("  %s: %d\n", event->name, event->id);
 	printf("    flag: %d\n", event->flags);
-	
+
 	printf("    fields:\n");
-	
+
 	printFields(event->format.common_fields);
 	printFields(event->format.fields);
-	
+
 }
 
-void printSystem(const struct Event_system * event_system) {
+void printSystem(const struct Event_system * event_system)
+{
 	printf("System: %s \n", event_system->sys_name);
 	for (int i = 0; i < event_system->event_format_count; i++) {
 		printEvent(&event_system->event_formats[i]);
 	}
 }
 
-void printSystems(const struct Event_systems *event_systems) {
+void printSystems(const struct Event_systems *event_systems)
+{
 	for (int i = 0; i < event_systems->sys_count; i++) {
 		printSystem(&event_systems->systems[i]);
 	}
-	
+
 }
 
-int main(int argc, char **argv){
-
+int main(int argc, char **argv)
+{
+	int ret;
 	struct tep_handle *tep = tep_alloc();
 	struct Header header;
 	struct Event_system ftrace_event_formats;
@@ -325,18 +410,22 @@ int main(int argc, char **argv){
 
 	restOfFileParser(fp, tep, &cpu_offsets);
 
-	int r = tep_get_cpus(tep);
-	long pos = ftell(fp);
+	GError *err;
+	GMappedFile *map = g_mapped_file_new_from_fd(fileno(fp), FALSE, &err);
+	if(map == NULL){
+		fprintf(stderr, "Mapping failed: %s\n", err->message );
+		ret = 1;
+		goto end;
+	}
 
-	fseek(fp, (long)cpu_offsets[3].cpu_offset-pos+cpu_offsets[3].cpu_offset_size, SEEK_CUR);
+	for(int cpu = 0; cpu < tep_get_cpus(tep); cpu++) {
+		printf("cpu %d\n", cpu);
+		parse_cpu_event(fp, tep, &cpu_offsets[cpu], map);
+	}
 
-	struct trace_seq seq;
-	trace_seq_init(&seq);
-	trace_seq_terminate(&seq);
-	trace_seq_destroy(&seq);
-	//free all
+	ret = 0;
 
-
+end:
 	fclose(fp);
 
 	freeEventSystem(&ftrace_event_formats);
@@ -346,5 +435,5 @@ int main(int argc, char **argv){
 
 	tep_free(tep);
 
-	return 0;
+	return ret;
 }
